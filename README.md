@@ -23,7 +23,7 @@ Possible future features:
 The API should be considered experimental and will change in the
 future.
 
-The core implementation consists of a state machie taking bytes as
+The core implementation consists of a state machine taking bytes as
 input and yielding iterators over byte slices. Because this is
 done without any IO, Noline can be adapted to work on any platform.
 

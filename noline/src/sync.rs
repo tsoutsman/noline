@@ -126,6 +126,10 @@ where
     pub fn get_history<'a>(&'a self) -> impl Iterator<Item = CircularSlice<'a>> {
         get_history_entries(&self.history)
     }
+    
+    pub fn dedup_history(&mut self) {
+        self.history.dedup();
+    }
 }
 
 #[cfg(test)]

@@ -180,6 +180,9 @@ pub trait History: Default {
             .take_while(|entry| self.add_entry(entry).is_ok())
             .count()
     }
+
+    /// Remove consecutive repeated entries
+    fn dedup(&mut self);
 }
 
 /// Return an iterator over history entries
@@ -290,6 +293,49 @@ impl<const N: usize> History for StaticHistory<N> {
     fn get_entry<'a>(&'a self, index: usize) -> Option<CircularSlice<'a>> {
         self.get_entries().nth(index)
     }
+
+    fn dedup(&mut self) {
+        // TODO: Verify
+
+        let mut buffer = [0; N];
+        let mut previous = (&[][..], &[][..]);
+        let mut idx = 0;
+
+        for entry in self.get_entries() {
+            let (slice1, slice2) = entry.get_slices();
+
+            if slice1.len() + slice2.len() == previous.0.len() + previous.1.len() {
+                let mut diff = false;
+                for (b1, b2) in slice1
+                    .iter()
+                    .chain(slice2)
+                    .zip(previous.0.iter().chain(previous.1))
+                {
+                    if b1 != b2 {
+                        diff = true;
+                    }
+                }
+                if !diff {
+                    continue;
+                }
+            }
+
+            let (range1, range2) = entry.get_ranges();
+            let (len1, len2) = (range1.end - range1.start, range2.end - range2.start);
+
+            buffer[idx..idx + len1].copy_from_slice(slice1);
+            idx += len1;
+            buffer[idx..idx + len2].copy_from_slice(slice2);
+            idx += len2;
+            buffer[idx] = 0x0;
+            idx += 1;
+
+            previous = (slice1, slice2);
+        }
+        let window = Window::new(CircularIndex::new(0), CircularIndex::new(idx));
+
+        *self = Self { buffer, window };
+    }
 }
 
 /// Emtpy implementation for Editors with no history
@@ -319,6 +365,8 @@ impl History for NoHistory {
     fn number_of_entries(&self) -> usize {
         0
     }
+
+    fn dedup(&mut self) {}
 }
 
 /// Wrapper used for history navigation in [`core::Line`]
@@ -397,6 +445,10 @@ mod alloc {
         pub fn new() -> Self {
             Self { buffer: Vec::new() }
         }
+
+        pub fn dedup(&mut self) {
+            self.buffer.dedup();
+        }
     }
 
     impl Default for UnboundedHistory {
@@ -423,6 +475,10 @@ mod alloc {
 
         fn number_of_entries(&self) -> usize {
             self.buffer.len()
+        }
+
+        fn dedup(&mut self) {
+            self.buffer.dedup();
         }
     }
 }
@@ -578,5 +634,37 @@ mod tests {
             history.get_entries().collect::<Vec<String>>(),
             vec!["abc", "defgh"]
         );
+    }
+
+    #[test]
+    fn static_dedup() {
+        let mut history: StaticHistory<10> = StaticHistory::new();
+
+        history.add_entry("aa").unwrap();
+
+        assert_eq!(history.get_entries().collect::<Vec<String>>(), vec!["aa"],);
+
+        history.add_entry("aa").unwrap();
+
+        assert_eq!(
+            history.get_entries().collect::<Vec<String>>(),
+            vec!["aa", "aa"],
+        );
+
+        history.add_entry("bcd").unwrap();
+
+        assert_eq!(
+            history.get_entries().collect::<Vec<String>>(),
+            vec!["aa", "aa", "bcd"],
+        );
+
+        history.dedup();
+
+        assert_eq!(
+            history.get_entries().collect::<Vec<String>>(),
+            vec!["aa", "bcd"],
+        );
+
+        // TODO: Expand tests.
     }
 }
